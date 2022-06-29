@@ -1,5 +1,0 @@
-Learning rule: mPES
-Function: x**2
-Neurons: 100
-Dimensions: 3
-Number of runs for averaging: 100
