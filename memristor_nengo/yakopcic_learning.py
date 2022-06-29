@@ -7,7 +7,6 @@ from nengo.learning_rules import LearningRuleType
 from nengo.params import Default, NumberParam, DictParam
 from nengo.synapses import Lowpass, SynapseParam
 
-from scipy.stats import truncnorm
 from memristor_nengo.debug_plots import debugger_plots
 from memristor_nengo.yakopcic_functions import *
 
