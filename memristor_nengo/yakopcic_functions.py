@@ -1,6 +1,7 @@
 import numpy as np
 from scipy.stats import truncnorm
 
+
 def mimd(v, g_p, b_p, g_n, b_n):
     return np.where(v >= 0, g_p * np.sinh(b_p * v), g_n * np.sinh(b_n * v))
 
@@ -9,8 +10,20 @@ def mim_iv(v, g, b):
     return g * np.sinh(b * v)
 
 
-def current(v, x, gmax_p, bmax_p, gmax_n, bmax_n, gmin_p, bmin_p, gmin_n, bmin_n):
+def h1(v, g_p, b_p, g_n, b_n):
+    return np.where(v >= 0, g_p * np.sinh(b_p * v), g_n * (1 - np.exp(-b_n * v)))
+
+
+def h2(v, g_p, b_p, g_n, b_n):
+    return np.where(v >= 0, g_p * (1 - np.exp(-b_p * v)), g_n * np.sinh(b_n * v))
+
+
+def current(v, x, gmax_p, bmax_p, gmax_n, bmax_n, gmin_p, bmin_p, gmin_n, bmin_n):  # First implementation
     return mimd(v, gmax_p, bmax_p, gmax_n, bmax_n) * x + mimd(v, gmin_p, bmin_p, gmin_n, bmin_n) * (1 - x)
+
+
+# def current(v, x, gmax_p, bmax_p, gmax_n, bmax_n, gmin_p, bmin_p, gmin_n, bmin_n): # Implemented with Dima (2022)
+#    return h1(v, gmax_p, bmax_p, gmax_n, bmax_n) * x + h2(v, gmin_p, bmin_p, gmin_n, bmin_n) * (1 - x)
 
 
 def g(v, Ap, An, Vp, Vn):
@@ -60,4 +73,3 @@ def resistance2conductance(R, r_min, r_max):
     g_norm = (g_curr - g_min) / (g_max - g_min)
 
     return g_norm
-
