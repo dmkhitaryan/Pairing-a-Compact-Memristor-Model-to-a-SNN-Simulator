@@ -18,12 +18,12 @@ def h2(v, g_p, b_p, g_n, b_n):
     return np.where(v >= 0, g_p * (1 - np.exp(-b_p * v)), g_n * np.sinh(b_n * v))
 
 
-def current(v, x, gmax_p, bmax_p, gmax_n, bmax_n, gmin_p, bmin_p, gmin_n, bmin_n):  # First implementation
-    return mimd(v, gmax_p, bmax_p, gmax_n, bmax_n) * x + mimd(v, gmin_p, bmin_p, gmin_n, bmin_n) * (1 - x)
+#def current(v, x, gmax_p, bmax_p, gmax_n, bmax_n, gmin_p, bmin_p, gmin_n, bmin_n):  # First implementation
+#    return mimd(v, gmax_p, bmax_p, gmax_n, bmax_n) * x + mimd(v, gmin_p, bmin_p, gmin_n, bmin_n) * (1 - x)
 
 
-# def current(v, x, gmax_p, bmax_p, gmax_n, bmax_n, gmin_p, bmin_p, gmin_n, bmin_n): # Implemented with Dima (2022)
-#    return h1(v, gmax_p, bmax_p, gmax_n, bmax_n) * x + h2(v, gmin_p, bmin_p, gmin_n, bmin_n) * (1 - x)
+def current(v, x, gmax_p, bmax_p, gmax_n, bmax_n, gmin_p, bmin_p, gmin_n, bmin_n): # Implemented with Dima (2022)
+    return h1(v, gmax_p, bmax_p, gmax_n, bmax_n) * x + h2(v, gmin_p, bmin_p, gmin_n, bmin_n) * (1 - x)
 
 
 def g(v, Ap, An, Vp, Vn):

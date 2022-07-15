@@ -11,7 +11,40 @@ from memristor_nengo.debug_plots import debugger_plots
 from memristor_nengo.yakopcic_functions import *
 
 
-def initialise_memristors2(rule, in_size, out_size):
+def initialise_memristors2(rule, in_size, out_size, An, Ap, Vn, Vp, alphan, alphap, bmax_n, bmax_p, bmin_n, bmin_p,
+                          gmax_n, gmax_p, gmin_n, gmin_p, x0, xn, xp):
+    exponent = 0
+    r_min = np.full((out_size, in_size), rule.r_min)
+    r_max = np.full((out_size, in_size), rule.r_max)
+    R = np.full((out_size, in_size), rule.r_min)
+    V = np.full((out_size, in_size), -4)
+    x = x0
+    r = np.full((out_size, in_size), rule.r_min)
+
+    for N in range(0, 10):
+        x = x + dxdt(np.abs(V), x, Ap, An, Vp, Vn,
+                               xp, xn, alphap, alphan, 1) * 0.001
+        # Clip the value of state variables beyond the [0,1] range
+        x = np.select([x < 0, x > 1], [0, 1], default=x)
+
+        # Calculate the current and the resistance for the devices
+        i = current(np.abs(V), x, gmax_p, bmax_p,
+                    gmax_n, bmax_n, gmin_p, bmin_p, gmin_n, bmin_n)
+        r = np.divide(np.abs(V), i, out=np.zeros(V.shape, dtype=float), where=i != 0)
+        # Clip the value of resistances beyond the [r_min, r_max] range
+        r = np.select([r < rule.r_min, r > rule.r_max], [rule.r_min, rule.r_max], default=r)
+    R = r
+
+    pos_memristors = Signal(shape=(out_size, in_size), name=f"{rule}:pos_memristors",
+                            initial_value=R)
+    neg_memristors = Signal(shape=(out_size, in_size), name=f"{rule}:neg_memristors",
+                            initial_value=R)
+    print(r)
+
+    return pos_memristors, neg_memristors, r_min, r_max, exponent
+
+
+def initialise_memristors(rule, in_size, out_size):
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         np.random.seed(rule.seed)
@@ -147,45 +180,45 @@ class SimmPES(Operator):
             gmin_p,
             Vn,
             Vp,
+            alphan,
+            alphap,
             An,
             Ap,
-            noise,
+            x0,
+            xn,
+            xp,
             initial_state,
             tag=None
     ):
         super(SimmPES, self).__init__(tag=tag)
 
-        self.noise_percentage = noise_percentage
         self.gain = gain
         self.error_threshold = 1e-5
         self.r_min = r_min
         self.r_max = r_max
         self.exponent = exponent
-        self.An = An #0.1065893286 * 8e-1
-        self.Ap = Ap #0.0118432587 * 4e1
-        self.Vn = .5 #Vn
-        self.Vp = .5 #Vp
-        self.alphan = 1.0
-        self.alphap = 1.0
-        self.bmax_n = 3.23 #bmax_n
-        self.bmax_p = 4.96 #bmax_p
-        self.bmin_n = 2.6 #bmin_n
-        self.bmin_p = 6.91 #bmin_p
-        self.gmax_n = 0.00017 #gmax_n
-        self.gmax_p = 9.0e-05 #gmax_p
-        self.gmin_n = 4.4e-07 #gmin_n
-        self.gmin_p = 1.5e-05 #gmin_p
-        self.xn = 0.242
-        self.xp = .1
-        self.x = 0
-        self.x_p = 0
-        self.x_n = 0
+        self.An = An
+        self.Ap = Ap
+        self.Vn = Vn
+        self.Vp = Vp
+        self.alphan = alphan
+        self.alphap = alphap
+        self.bmax_n = bmax_n
+        self.bmax_p = bmax_p
+        self.bmin_n = bmin_n
+        self.bmin_p = bmin_p
+        self.gmax_n = gmax_n
+        self.gmax_p = gmax_p
+        self.gmin_n = gmin_n
+        self.gmin_p = gmin_p
+        self.xn = xn
+        self.xp = xp
+        self.x = x0
         self.pulse = 0
         self.currents = []
         self.xs = []
         self.rs = []
         self.debug = False
-        self.noise_percentage = noise
         self.initial_state = initial_state
 
         self.sets = []
@@ -243,8 +276,6 @@ class SimmPES(Operator):
         pulse_levels = 100
 
         def step_simmpes():
-            self.An = np.random.normal(self.An, self.An * self.noise_percentage, self.An.shape)
-            self.Ap = np.random.normal(self.Ap, self.Ap * self.noise_percentage, self.Ap.shape)
             # set update to zero if error is small or adjustments go on for ever
             # if error is small return zero delta
             if np.any(np.absolute(local_error) > error_threshold):
@@ -256,8 +287,6 @@ class SimmPES(Operator):
                 pes_delta[spiked_map] = 0
 
                 V = np.sign(pes_delta) * 6e-1
-                #self.Vn = np.random.normal(self.Vn, self.Vn * self.noise_percentage, self.Vn.shape)
-                #self.Vp = np.random.normal(self.Vp, self.Vp * self.noise_percentage, self.Vp.shape)
                 # print("V: ", V, "\n")
 
                 # Calculate the state variables at a current timestep
@@ -327,11 +356,31 @@ def build_mpes(model, mpes, rule):
     post = get_post_ens(conn)
     encoders = model.sig[post]["encoders"]
 
-    pos_memristors, neg_memristors, r_min_noisy, r_max_noisy, exponent_noisy = initialise_memristors2(mpes,
-                                                                                                     acts.shape[0],
-                                                                                                     encoders.shape[
-                                                                                                         0])
+    An = np.random.normal(0.02662694665, 0.001699912801, (encoders.shape[0], acts.shape[0]))
+    Ap = np.random.normal(0.071, 0, (encoders.shape[0], acts.shape[0]))
+    Vn = np.random.normal(0, 0, (encoders.shape[0], acts.shape[0]))
+    Vp = np.random.normal(0, 0, (encoders.shape[0], acts.shape[0]))
+    alphan = np.random.normal(0.7013461469, 0.3752922588, (encoders.shape[0], acts.shape[0]))
+    alphap = np.random.normal(9.2, 0, (encoders.shape[0], acts.shape[0]))
+    bmax_n = np.random.normal(6.272960721, 0.3250900701, (encoders.shape[0], acts.shape[0]))
+    bmax_p = np.random.normal(4.988561168, 0.1395977535, (encoders.shape[0], acts.shape[0]))
+    bmin_n = np.random.normal(3.295533935, 0.1351036836, (encoders.shape[0], acts.shape[0]))
+    bmin_p = np.random.normal(0.002125127287, 0.001156594332, (encoders.shape[0], acts.shape[0]))
+    gmax_n = np.random.normal(8.44e-06, 0.0000009751307503, (encoders.shape[0], acts.shape[0]))
+    gmax_p = np.random.normal(0.0004338454236, 0.00006433347881, (encoders.shape[0], acts.shape[0]))
+    gmin_n = np.random.normal(1.45e-05, 0.000001269628401, (encoders.shape[0], acts.shape[0]))
+    gmin_p = np.random.normal(0.03135053798, 0.01128684089, (encoders.shape[0], acts.shape[0]))
+    x0 = np.random.normal(0, 0, (encoders.shape[0], acts.shape[0]))
+    xn = np.random.normal(0.1433673316, 0.007340350194, (encoders.shape[0], acts.shape[0]))
+    xp = np.random.normal(0.11, 0, (encoders.shape[0], acts.shape[0]))
 
+    pos_memristors, neg_memristors, r_min_noisy, r_max_noisy, exponent_noisy = initialise_memristors(mpes,
+                                                                                                    acts.shape[0],
+                                                                                                    encoders.shape[
+                                                                                                         0])
+    #pos_memristors, neg_memristors, r_min_noisy, r_max_noisy, exponent_noisy = initialise_memristors2(mpes,
+    #                        acts.shape[0], encoders.shape[0], An, Ap, Vn, Vp, alphan, alphap,
+    #                        bmax_n, bmax_p, bmin_n, bmin_p, gmax_n, gmax_p, gmin_n, gmin_p, x0, xn, xp)
     model.sig[conn]["pos_memristors"] = pos_memristors
     model.sig[conn]["neg_memristors"] = neg_memristors
 
@@ -349,22 +398,6 @@ def build_mpes(model, mpes, rule):
     local_error = Signal(shape=(post.n_neurons,))
     model.add_op(Reset(local_error))
     model.add_op(DotInc(encoders, padded_error, local_error, tag="PES:encode"))
-
-    bmax_n = np.random.normal(3.23, 3.23 * mpes.noise_percentage[3], (encoders.shape[0], acts.shape[0]))
-    bmax_p = np.random.normal(4.96, 4.96 * mpes.noise_percentage[3], (encoders.shape[0], acts.shape[0]))
-    bmin_n = np.random.normal(2.6, 2.6 * mpes.noise_percentage[3], (encoders.shape[0], acts.shape[0]))
-    bmin_p = np.random.normal(6.91, 6.91 * mpes.noise_percentage[3], (encoders.shape[0], acts.shape[0]))
-    gmax_n = np.random.normal(0.00017, 0.00017 * mpes.noise_percentage[3], (encoders.shape[0], acts.shape[0]))
-    gmax_p = np.random.normal(9.0e-05, 9.0e-05 * mpes.noise_percentage[3], (encoders.shape[0], acts.shape[0]))
-    gmin_n = np.random.normal(4.4e-07, 4.4e-07 * mpes.noise_percentage[3], (encoders.shape[0], acts.shape[0]))
-    gmin_p = np.random.normal(1.5e-05, 1.5e-05 * mpes.noise_percentage[3], (encoders.shape[0], acts.shape[0]))
-    Vn = np.random.normal(.5, .5 * mpes.noise_percentage[3], (encoders.shape[0], acts.shape[0]))
-    Vp = np.random.normal(.5, .5 * mpes.noise_percentage[3], (encoders.shape[0], acts.shape[0]))
-    An = np.random.normal(0.1065893286 * 8e-1, 0.1065893286 * 8e-1 * mpes.noise_percentage[3],
-                          (encoders.shape[0], acts.shape[0]))
-    Ap = np.random.normal(0.0118432587 * 4e1, 0.0118432587 * 4e1 * mpes.noise_percentage[3],
-                          (encoders.shape[0], acts.shape[0]))
-    noise = mpes.noise_percentage[3]
 
     model.operators.append(
         SimmPES(acts,
@@ -387,9 +420,13 @@ def build_mpes(model, mpes, rule):
                 gmin_p,
                 Vn,
                 Vp,
+                alphan,
+                alphap,
                 An,
                 Ap,
-                noise,
+                x0,
+                xn,
+                xp,
                 mpes.initial_state,
                 )
     )
